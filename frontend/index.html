@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quiz over TCP — CS3530</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#eef2f6;
+  --card:#ffffff;
+  --ink:#16222e;
+  --soft:#5a6e80;
+  --rule:#ccd9e4;
+  --wire:#2b5ce6;
+  --cache:#0b8f63;
+  --fresh:#b45f09;
+  --alert:#cc3f57;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+body{
+  margin:0;
+  font-family:var(--sans);
+  color:var(--ink);
+  background:var(--paper);
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    repeating-linear-gradient(0deg,rgba(22,34,46,.045) 0 1px,transparent 1px 30px),
+    repeating-linear-gradient(90deg,rgba(22,34,46,.045) 0 1px,transparent 1px 30px);
+}
+.wrap{position:relative;z-index:1;max-width:1120px;margin:0 auto;padding:28px 20px 64px}
+a{color:var(--wire)}
+h1,h2,h3{line-height:1.2;margin:0}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--wire);outline-offset:2px;border-radius:4px}
+
+/* ---------- masthead ---------- */
+.masthead{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:baseline;
+  border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:26px}
+.masthead h1{font-size:clamp(26px,4vw,38px);font-weight:700;letter-spacing:-.02em}
+.masthead p{margin:0;color:var(--soft);font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--rule);display:inline-block;
+  margin-right:7px;vertical-align:1px}
+.dot.on{background:var(--cache);box-shadow:0 0 0 3px rgba(11,143,99,.18)}
+.dot.bad{background:var(--alert);box-shadow:0 0 0 3px rgba(204,63,87,.18)}
+
+/* ---------- header diagram (the hero) ---------- */
+.frame{font-family:var(--mono);border:1.5px solid var(--ink);background:var(--card);
+  display:grid;grid-template-columns:2fr 1.1fr 1.1fr 2.6fr 2.6fr;overflow:hidden}
+.frame div{padding:10px 8px;text-align:center;border-right:1px solid var(--rule)}
+.frame div:last-child{border-right:0}
+.frame .k{display:block;font-size:10.5px;letter-spacing:.06em;color:var(--soft)}
+.frame .v{display:block;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.frame .pay{grid-column:1/-1;border-top:1px solid var(--rule);border-right:0;
+  text-align:left;color:var(--soft);font-size:12.5px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+
+/* ---------- panels ---------- */
+.grid{display:grid;grid-template-columns:1.35fr .95fr;gap:22px;align-items:start}
+@media (max-width:880px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:3px}
+.panel > h2{font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--soft);
+  padding:11px 16px;border-bottom:1px solid var(--rule);display:flex;
+  justify-content:space-between;align-items:center;gap:10px}
+.panel .body{padding:16px}
+
+/* ---------- join ---------- */
+.join{margin-top:26px;display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}
+@media (max-width:640px){.join{grid-template-columns:1fr}}
+label{display:block;font-size:12.5px;color:var(--soft);margin-bottom:5px}
+input{width:100%;font:inherit;padding:11px 12px;border:1.5px solid var(--rule);
+  border-radius:3px;background:var(--card);color:var(--ink)}
+input:focus{border-color:var(--wire);outline:none;box-shadow:0 0 0 3px rgba(43,92,230,.15)}
+.btn{padding:11px 20px;border:1.5px solid var(--ink);background:var(--ink);color:#fff;
+  border-radius:3px;font-weight:600}
+.btn:hover{background:#0d1a25}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
+.btn.ghost:hover{border-color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.hint{color:var(--soft);font-size:13px;margin-top:14px}
+.err{color:var(--alert);font-size:13.5px;margin-top:12px;min-height:20px}
+
+/* ---------- question ---------- */
+.qmeta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  font-family:var(--mono);font-size:12px;color:var(--soft);margin-bottom:10px}
+.tag{border:1px solid currentColor;border-radius:2px;padding:1px 7px;font-weight:500}
+.tag.cache{color:var(--cache)}
+.tag.fresh{color:var(--fresh)}
+.qtext{font-size:20px;font-weight:600;letter-spacing:-.01em;margin:0 0 16px}
+.opts{display:grid;gap:9px}
+.opt{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;
+  padding:12px 14px;border:1.5px solid var(--rule);border-radius:3px;background:var(--card);
+  color:var(--ink);transition:border-color .12s,background .12s}
+.opt:hover:not(:disabled){border-color:var(--wire)}
+.opt:disabled{cursor:default;opacity:.85}
+.opt .letter{font-family:var(--mono);font-weight:600;color:var(--wire);min-width:16px}
+.opt.right{border-color:var(--cache);background:rgba(11,143,99,.08)}
+.opt.wrong{border-color:var(--alert);background:rgba(204,63,87,.07)}
+.verdict{margin-top:16px;font-weight:600;min-height:24px}
+.verdict.right{color:var(--cache)}
+.verdict.wrong{color:var(--alert)}
+.controls{display:flex;flex-wrap:wrap;gap:9px;margin-top:18px;
+  border-top:1px solid var(--rule);padding-top:16px}
+.empty{color:var(--soft)}
+
+/* ---------- clock + stats ---------- */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule)}
+.stats div{background:var(--card);padding:13px 10px;text-align:center}
+.stats .n{font-family:var(--mono);font-size:22px;font-weight:600;
+  font-variant-numeric:tabular-nums;display:block}
+.stats .l{font-size:11.5px;color:var(--soft)}
+.bar{height:4px;background:var(--rule)}
+.bar i{display:block;height:100%;background:var(--wire);width:100%}
+
+/* ---------- leaderboard ---------- */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 16px;text-align:left;border-bottom:1px solid var(--rule)}
+th{font-size:11.5px;color:var(--soft);font-weight:500}
+td.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+tr.me td{background:rgba(43,92,230,.07);font-weight:600}
+tbody tr:last-child td{border-bottom:0}
+
+/* ---------- wire trace ---------- */
+.trace{font-family:var(--mono);font-size:12px;max-height:290px;overflow-y:auto}
+.trace .row{display:grid;grid-template-columns:62px 14px 1fr auto;gap:8px;
+  padding:5px 16px;border-bottom:1px solid #eef2f6;align-items:baseline}
+.trace .row:last-child{border-bottom:0}
+.trace .t{color:var(--soft)}
+.trace .d{font-weight:700}
+.trace .in .d{color:var(--wire)}
+.trace .out .d{color:var(--soft)}
+.trace .b{color:var(--soft);font-variant-numeric:tabular-nums}
+.trace .row.flag-hit .n{color:var(--cache)}
+.trace .row.flag-miss .n{color:var(--fresh)}
+.trace .row.fresh{animation:land .3s ease-out}
+@keyframes land{from{background:rgba(43,92,230,.12)}to{background:transparent}}
+@media (prefers-reduced-motion:reduce){.trace .row.fresh{animation:none}}
+
+.footnote{margin-top:26px;color:var(--soft);font-size:12.5px;font-family:var(--mono)}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>Quiz over TCP</h1>
+    <p><span id="link" class="dot"></span><span id="linkText">not connected</span></p>
+  </header>
+
+  <!-- ============ JOIN ============ -->
+  <section id="joinView">
+    <p style="max-width:62ch;margin:0 0 18px;color:var(--soft)">
+      Every message below travels as one framed message on a single TCP connection.
+      This is the header your name is about to be wrapped in.
+    </p>
+
+    <div class="frame" id="frameDiagram">
+      <div><span class="k">magic</span><span class="v">0x515A</span></div>
+      <div><span class="k">ver</span><span class="v">1</span></div>
+      <div><span class="k">flags</span><span class="v">0x00</span></div>
+      <div><span class="k">type</span><span class="v">10</span></div>
+      <div><span class="k">length</span><span class="v" id="fLen">0</span></div>
+      <div class="pay" id="fPay">payload: (type your name)</div>
+    </div>
+
+    <div class="join">
+      <div>
+        <label for="nameIn">Your name on the leaderboard</label>
+        <input id="nameIn" maxlength="32" placeholder="e.g. Ananya" autocomplete="off">
+      </div>
+      <div>
+        <label for="genreIn">Quiz genre</label>
+        <input id="genreIn" maxlength="64" placeholder="Science, History, Sports…" autocomplete="off">
+      </div>
+      <button class="btn" id="joinBtn">Join the quiz</button>
+    </div>
+
+    <p class="err" id="joinErr"></p>
+    <p class="hint">
+      The page talks to <code>bridge.py</code> on this machine, which holds the TCP
+      connection to the quiz server and answers KEEP_ALIVE for you.
+    </p>
+  </section>
+
+  <!-- ============ SESSION ============ -->
+  <section id="playView" class="hidden">
+    <div class="grid">
+
+      <div>
+        <div class="panel">
+          <h2><span>Question</span><span id="genreLabel"></span></h2>
+          <div class="body" id="qBody">
+            <p class="empty">Waiting for the first question…</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:22px">
+        <div class="panel">
+          <h2><span>This session</span><span id="modeLabel"></span></h2>
+          <div class="bar"><i id="clockBar"></i></div>
+          <div class="stats">
+            <div><span class="n" id="statClock">5:00</span><span class="l">time left</span></div>
+            <div><span class="n" id="statScore">0</span><span class="l">correct</span></div>
+            <div><span class="n" id="statLat">–</span><span class="l">last question ms</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2><span>Leaderboard</span>
+            <button class="btn ghost" id="lbBtn" style="padding:4px 10px;font-size:12px">Refresh</button>
+          </h2>
+          <table>
+            <thead><tr><th>#</th><th>Player</th><th style="text-align:right">Score</th></tr></thead>
+            <tbody id="lbBody"><tr><td colspan="3" class="empty" style="padding:14px 16px">
+              Ask for the leaderboard at any time.</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h2><span>On the wire</span><span id="byteCount">0 B</span></h2>
+          <div class="trace" id="trace"></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="footnote" id="foot"></p>
+  </section>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const TYPES = {GENRE_REQUEST:1,QUESTION_DELIVERY:2,ANSWER_SUBMISSION:3,RESULT_DELIVERY:4,
+  LEADERBOARD_REQUEST:5,LEADERBOARD_DELIVERY:6,SESSION_END:7,KEEP_ALIVE:8,ALIVE_OK:9,
+  USERNAME_SUBMISSION:10,ERROR_MSG:11,SERVER_INFO:12};
+
+let sid = null, source = null, me = "", genre = "", score = 0, answered = 0;
+let questionSentAt = 0, awaitingAnswer = false, endsAt = 0, clockTimer = null;
+
+/* ---- live header diagram on the join screen ---- */
+function refreshDiagram(){
+  const bytes = new TextEncoder().encode($("nameIn").value).length;
+  $("fLen").textContent = bytes;
+  $("fPay").textContent = "payload: " + ($("nameIn").value || "(type your name)");
+}
+$("nameIn").addEventListener("input", refreshDiagram);
+
+/* ---- transport ---- */
+async function post(path, body){
+  const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"},
+                              body:JSON.stringify(body||{})});
+  const data = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(data.error || ("request failed: " + r.status));
+  return data;
+}
+function send(type, payload){
+  if(!sid) return;
+  post("/api/send", {sid, type, payload: payload || ""}).catch(e => setVerdict(e.message, ""));
+}
+
+/* ---- join ---- */
+$("joinBtn").addEventListener("click", join);
+$("nameIn").addEventListener("keydown", e => { if(e.key === "Enter") join(); });
+$("genreIn").addEventListener("keydown", e => { if(e.key === "Enter") join(); });
+
+async function join(){
+  const name = $("nameIn").value.trim();
+  if(!name){ $("joinErr").textContent = "Enter a name first."; $("nameIn").focus(); return; }
+  genre = $("genreIn").value.trim() || "General Knowledge";
+  $("joinBtn").disabled = true;
+  $("joinErr").textContent = "";
+  try{
+    const res = await post("/api/connect", {username:name, genre});
+    sid = res.sid; me = res.username;
+    $("joinView").classList.add("hidden");
+    $("playView").classList.remove("hidden");
+    $("genreLabel").textContent = genre;
+    setLink("on", "connected as " + me);
+    listen();
+    nextQuestion();
+  }catch(e){
+    $("joinErr").textContent = e.message;
+    $("joinBtn").disabled = false;
+  }
+}
+
+function setLink(state, text){
+  const d = $("link");
+  d.className = "dot" + (state === "on" ? " on" : state === "bad" ? " bad" : "");
+  $("linkText").textContent = text;
+}
+
+/* ---- event stream ---- */
+function listen(){
+  source = new EventSource("/api/events?sid=" + sid);
+  source.onmessage = ev => handle(JSON.parse(ev.data));
+  source.onerror = () => setLink("bad", "stream interrupted");
+}
+
+function handle(ev){
+  trace(ev);
+  $("byteCount").textContent = (ev.bytes_in + ev.bytes_out) + " B";
+  if(ev.dir !== "in") return;
+  const p = ev.payload || {};
+
+  switch(ev.type){
+    case "SERVER_INFO":
+      endsAt = Date.now() + (p.session_seconds || 300) * 1000;
+      $("modeLabel").textContent = p.cache_enabled ? "cache on" : "cache off";
+      startClock();
+      break;
+
+    case "QUESTION_DELIVERY":
+      $("statLat").textContent = Math.round(performance.now() - questionSentAt);
+      renderQuestion(p, ev.cache);
+      break;
+
+    case "RESULT_DELIVERY":
+      showResult(p);
+      break;
+
+    case "LEADERBOARD_DELIVERY":
+      renderLeaderboard(p);
+      break;
+
+    case "SESSION_END":
+      endSession(p);
+      break;
+
+    case "CLOSED":
+      setLink("bad", "connection closed");
+      break;
+  }
+}
+
+/* ---- question ---- */
+function nextQuestion(){
+  questionSentAt = performance.now();
+  awaitingAnswer = false;
+  $("qBody").innerHTML = '<p class="empty">Fetching a question…</p>';
+  send("GENRE_REQUEST", genre);
+}
+
+function renderQuestion(p, cache){
+  if(p.error){
+    $("qBody").innerHTML = '<p class="empty"></p>';
+    $("qBody").firstChild.textContent = p.error;
+    addControls();
+    return;
+  }
+  const text = p.q || p.question || "";
+  const origin = cache === "hit"
+      ? '<span class="tag cache">from cache</span>'
+      : cache === "miss" ? '<span class="tag fresh">generated now</span>' : "";
+
+  const wrap = document.createElement("div");
+  wrap.innerHTML =
+    '<div class="qmeta">question ' + (p.question_id || "") + ' ' + origin + '</div>' +
+    '<h3 class="qtext"></h3><div class="opts"></div>' +
+    '<p class="verdict" id="verdict"></p>';
+  wrap.querySelector(".qtext").textContent = text;
+
+  const box = wrap.querySelector(".opts");
+  (p.options || []).forEach((opt, i) => {
+    const letter = String.fromCharCode(65 + i);
+    const b = document.createElement("button");
+    b.className = "opt";
+    b.dataset.letter = letter;
+    b.innerHTML = '<span class="letter"></span><span class="txt"></span>';
+    b.querySelector(".letter").textContent = letter;
+    b.querySelector(".txt").textContent = String(opt).replace(/^[A-D][).]\s*/, "");
+    b.addEventListener("click", () => answer(letter));
+    box.appendChild(b);
+  });
+
+  $("qBody").innerHTML = "";
+  $("qBody").appendChild(wrap);
+  addControls();
+  awaitingAnswer = true;
+}
+
+function addControls(){
+  const bar = document.createElement("div");
+  bar.className = "controls";
+  bar.innerHTML =
+    '<button class="btn ghost" id="skipBtn">Next question</button>' +
+    '<button class="btn ghost" id="genreBtn">Change genre</button>' +
+    '<button class="btn ghost" id="quitBtn">Leave the quiz</button>';
+  $("qBody").appendChild(bar);
+  $("skipBtn").addEventListener("click", nextQuestion);
+  $("quitBtn").addEventListener("click", () => send("SESSION_END", ""));
+  $("genreBtn").addEventListener("click", () => {
+    const g = prompt("New genre", genre);
+    if(g && g.trim()){ genre = g.trim(); $("genreLabel").textContent = genre; nextQuestion(); }
+  });
+}
+
+function answer(letter){
+  if(!awaitingAnswer) return;
+  awaitingAnswer = false;
+  document.querySelectorAll(".opt").forEach(b => {
+    b.disabled = true;
+    if(b.dataset.letter === letter) b.style.borderColor = "var(--wire)";
+  });
+  send("ANSWER_SUBMISSION", letter);
+}
+
+function showResult(p){
+  const v = $("verdict");
+  if(!v) return;
+  const right = p.verdict === "correct";
+  v.className = "verdict " + (right ? "right" : "wrong");
+  v.textContent = right ? "Correct." :
+      p.verdict === "no_question" ? p.message :
+      "Wrong — the answer was " + (p.correct_option || "?") + ".";
+  document.querySelectorAll(".opt").forEach(b => {
+    if(b.dataset.letter === p.correct_option) b.classList.add("right");
+  });
+  if(typeof p.score === "number"){ score = p.score; $("statScore").textContent = score; }
+  answered++;
+  setTimeout(() => { if(sid) nextQuestion(); }, 1800);
+}
+
+function setVerdict(text, cls){
+  const v = $("verdict");
+  if(v){ v.className = "verdict " + cls; v.textContent = text; }
+}
+
+/* ---- leaderboard ---- */
+$("lbBtn").addEventListener("click", () => send("LEADERBOARD_REQUEST", ""));
+
+function renderLeaderboard(p){
+  const rows = (p.entries || []);
+  const body = $("lbBody");
+  body.innerHTML = "";
+  if(!rows.length){
+    body.innerHTML = '<tr><td colspan="3" class="empty" style="padding:14px 16px">' +
+                     'Nobody is connected.</td></tr>';
+    return;
+  }
+  rows.forEach(e => {
+    const tr = document.createElement("tr");
+    if(e.name === me) tr.className = "me";
+    const rank = document.createElement("td"); rank.className = "num"; rank.textContent = e.rank;
+    const nm = document.createElement("td"); nm.textContent = e.name;
+    const sc = document.createElement("td"); sc.className = "num";
+    sc.textContent = e.score + " / " + e.answered;
+    tr.append(rank, nm, sc);
+    body.appendChild(tr);
+  });
+  if(p.note) $("foot").textContent = p.note;
+}
+
+/* ---- clock ---- */
+function startClock(){
+  clearInterval(clockTimer);
+  clockTimer = setInterval(() => {
+    const left = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+    const m = Math.floor(left / 60), s = String(left % 60).padStart(2, "0");
+    $("statClock").textContent = m + ":" + s;
+    $("clockBar").style.width = (left / 300 * 100) + "%";
+    if(left === 0) clearInterval(clockTimer);
+  }, 250);
+}
+
+/* ---- end ---- */
+function endSession(p){
+  clearInterval(clockTimer);
+  awaitingAnswer = false;
+  setLink("bad", "session finished");
+  const reasons = {time_limit:"the five minute limit was reached",
+                   client_quit:"you left the quiz",
+                   server_full:"the server already has ten players",
+                   keepalive_timeout:"the server stopped hearing from this client"};
+  const wrap = document.createElement("div");
+  wrap.innerHTML = '<h3 class="qtext">Quiz over — final scores available</h3>' +
+    '<p class="qmeta" id="endLine"></p>' +
+    '<button class="btn" id="againBtn">Play again</button>';
+  $("qBody").innerHTML = "";
+  $("qBody").appendChild(wrap);
+  $("endLine").textContent = p.error ? p.error :
+      "You answered " + (p.final_score || 0) + " of " + (p.answered || 0) +
+      " correctly. Session ended because " + (reasons[p.reason] || p.reason || "the link closed") + ".";
+  if(p.entries) renderLeaderboard(p);
+  if(p.cache){
+    $("foot").textContent = "Server cache: " + p.cache.hits + " hits, " + p.cache.misses +
+      " misses across " + p.cache.genres + " genre(s), " + p.cache.llm_calls + " LLM calls.";
+  }
+  $("againBtn").addEventListener("click", () => location.reload());
+  if(source) source.close();
+  post("/api/disconnect", {sid}).catch(()=>{});
+  sid = null;
+}
+
+/* ---- wire trace ---- */
+function trace(ev){
+  const box = $("trace");
+  const row = document.createElement("div");
+  const flag = ev.cache === "hit" ? " flag-hit" : ev.cache === "miss" ? " flag-miss" : "";
+  row.className = "row " + (ev.dir === "in" ? "in" : "out") + flag + " fresh";
+  const time = new Date(ev.t * 1000).toTimeString().slice(3, 8) +
+               "." + String(Math.floor((ev.t % 1) * 1000)).padStart(3, "0");
+  row.innerHTML = '<span class="t"></span><span class="d"></span>' +
+                  '<span class="n"></span><span class="b"></span>';
+  row.querySelector(".t").textContent = time;
+  row.querySelector(".d").textContent = ev.dir === "in" ? "\u2193" : "\u2191";
+  row.querySelector(".n").textContent = ev.type + (ev.cache ? "  " + ev.cache : "");
+  row.querySelector(".b").textContent = ev.bytes + " B";
+  box.prepend(row);
+  while(box.children.length > 120) box.lastChild.remove();
+}
+
+/* ---- keyboard ---- */
+document.addEventListener("keydown", e => {
+  if(!sid || e.target.tagName === "INPUT") return;
+  const k = e.key.toUpperCase();
+  if(["A","B","C","D"].includes(k)) answer(k);
+  else if(k === "N") nextQuestion();
+  else if(k === "L") send("LEADERBOARD_REQUEST", "");
+});
+
+refreshDiagram();
+$("nameIn").focus();
+</script>
+</body>
+</html>
